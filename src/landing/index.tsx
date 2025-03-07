@@ -7,6 +7,8 @@ import JoinMeeting from './join'
 import { classes } from './styles'
 import Header from './header'
 import { getLandingDefaults } from '../state'
+import CallUser from './CallUser'
+import IncomingCall from './IncommingCall'
 
 const pivotStyles: Partial<IPivotStyles> = {
   itemContainer: {
@@ -27,6 +29,10 @@ const Landing: FC = () => {
         <Stack.Item className={classes.containerInner}>
           <div className={classes.tagline}>
             Create or join a peer-to-peer meeting instantly
+          </div>
+          <div>
+            {/* <CallUser /> */}
+            <IncomingCall />
           </div>
           <Stack className={classes.main} horizontalAlign="center" horizontal>
             <Stack.Item className={classes.formContainer}>

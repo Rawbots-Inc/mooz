@@ -17,13 +17,13 @@ import 'dotenv/config'
 console.log('version', packageJson.version)
 console.log('allow', process.env.ALLOW_ORIGIN)
 const httpServer = createServer((_, res) => {
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'text/plain');
-  res.end('ok\n');
+  res.statusCode = 200
+  res.setHeader('Content-Type', 'text/plain')
+  res.end('ok\n')
 })
 const serverOpts: Partial<ServerOptions> = {
   cors: {
-    origin: JSON.parse(process.env.ALLOW_ORIGIN || '"*"'),
+    origin: process.env.ALLOW_ORIGIN?.split(',') || '*',
     credentials: !!process.env.ALLOW_ORIGIN,
   },
 }
@@ -38,11 +38,13 @@ const io = new Server<
 12 hours expiry. 
 It is long enough to last for any meeting (too long) and shouldn't be needed normally, just for the case i fuck up somewhere
 */
+// Tạo bộ nhớ cache tạm thời = nodeCache
 const stdTTL = 12 * 60 * 60
 const roomsCache = new NodeCache({
   stdTTL,
 })
 
+// Rooms được lưu trong bộ nhớ cache tạm thời (NodeCache)
 class Rooms {
   private static internalKeys: [keyof Omit<IServerRoom, keyof IRoom>] = [
     'userIds',
@@ -186,6 +188,11 @@ io.on('connection', socket => {
       const userId = socket.data.sessionId
       const id = Rooms.create(room, userId)
       const created = Rooms.get(id)
+      console.log('socket>>>', socket.data)
+      console.log('request:create_room >>>', {
+        id,
+        created,
+      })
       if (!created) {
         cb?.(GENERIC_ERROR)
         return
@@ -278,14 +285,47 @@ io.on('connection', socket => {
     cb?.()
   })
 
-  socket.on('disconnecting', () => { })
+  socket.on('disconnecting', () => {})
+
+  // Test for 1 - 1
+  // A gửi yêu cầu gọi B
+  socket.on('request:call-user', ({ from, to }) => {
+    io.to(to).emit('action:incoming-call', { from })
+
+    // Sau 30 giây nếu B không trả lời, tự động từ chối
+    const timer = setTimeout(() => {
+      io.to(from).emit('action:call-ended', {
+        message: 'Người dùng không bắt máy.',
+      })
+      io.to(to).emit('action:call-ended', {
+        message: 'Bạn đã bỏ lỡ cuộc gọi.',
+      })
+    }, 30000)
+
+    // B chấp nhận cuộc gọi
+    socket.on('request:accept-call', ({ from }) => {
+      clearTimeout(timer)
+      io.to(from).emit('action:call-accepted', { to })
+      io.to(to).emit('action:call-accepted', { from })
+    })
+
+    // B từ chối cuộc gọi
+    socket.on('request:reject-call', ({ from }) => {
+      clearTimeout(timer)
+      io.to(from).emit('action:call-ended', {
+        message: 'Người dùng đã từ chối cuộc gọi.',
+      })
+      io.to(to).emit('action:call-ended', {
+        message: 'Bạn đã từ chối cuộc gọi.',
+      })
+    })
+  })
 })
 
 function kickOut(userId: string, roomId: string) {
-  io.to(roomId)
-    .emit('action:terminate_peer_connection', {
-      userId,
-    })
+  io.to(roomId).emit('action:terminate_peer_connection', {
+    userId,
+  })
   io.to(userId).emit('action:room_connection_terminated', {
     roomId,
   })
